@@ -7,7 +7,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 //
 // 1. We import the types at compile time to ensure type safety. Hardhat does not report an error even
 // if these files are not yet generated, as long as the "--typecheck" command-line argument is not used.
-import { ContractFactory, ContractRunner, Signer } from "ethers";
+import { BaseContract, ContractFactory, ContractRunner, Signer } from "ethers";
 import * as TypechainTypes from "../../typechain-types";
 // 2. We import the values at runtime and silently ignore any exceptions.
 export let Factories = {} as typeof TypechainTypes;
@@ -92,4 +92,40 @@ export async function getTypedContract<T>(
         signer = await hre.ethers.getSigner(signer);
     }
     return contract.factory.connect(address, signer);
+}
+
+export async function transact(contract: BaseContract, methodName: string, params: unknown[], execute: boolean) {
+    if (execute) {
+        await (await contract.getFunction(methodName).send(...params)).wait();
+    } else {
+        console.log(`to: ${await contract.getAddress()}`);
+        console.log(`func: ${contract.interface.getFunction(methodName)?.format()}`);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        console.log(`params: ${JSON.stringify(params, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`);
+        console.log(`data: ${contract.interface.encodeFunctionData(methodName, params)}`);
+    }
+}
+
+export async function getProxyInfo(hre: HardhatRuntimeEnvironment) {
+    const proxied = new Set<string>();
+    for (const contractMeta of Object.values(CONTRACTS)) {
+        const name = contractMeta.name;
+        try {
+            await hre.ethers.getContract(`${name}Beacon`);
+            proxied.add(name);
+        } catch (e) {
+            validateError(e, "No Contract deployed with name");
+        }
+    }
+    return proxied;
+}
+
+export function validateError(e: unknown, msg: string) {
+    if (e instanceof Error) {
+        if (!e.toString().includes(msg)) {
+            throw Error(`unexpected error: ${String(e)}`);
+        }
+    } else {
+        throw Error(`unexpected error: ${String(e)}`);
+    }
 }
